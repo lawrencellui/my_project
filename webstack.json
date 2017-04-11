@@ -1,0 +1,662 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "Create a VPC and force subnets into particular AZs.",
+
+  "Parameters" : {
+
+    "SSHKey" : {
+      "Description" : "EC2 KeyPair",
+      "Type" : "AWS::EC2::KeyPair::KeyName",
+      "Default" : "td-key",
+      "ConstraintDescription" : "Can contain only ASCII characters."
+    },
+
+    "SSHLocationHome" : {
+      "Description" : "The IP address from home location",
+      "Type": "String",
+      "MinLength": "9",
+      "MaxLength": "18",
+      "Default": "70.95.43.138/32",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x/x."
+    },
+
+    "SSHLocationTD" : {
+      "Description" : "The IP address from TD location",
+      "Type": "String",
+      "MinLength": "9",
+      "MaxLength": "18",
+      "Default": "141.206.246.10/32",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x/x."
+    },
+
+    "InstanceType" : {
+      "Description" : "EC2 instance type.",
+      "Type" : "String",
+      "Default" : "t2.micro",
+      "AllowedValues" : [ "t2.micro" ]
+    },
+
+    "SSLCertARN" : {
+      "Description" : "ARN of SSL cert to use",
+      "Type" : "String",
+      "Default" : "arn:aws:iam::402028755725:server-certificate/TDCertificate",
+      "ConstraintDescription" : "Valid ARN of pre-uploaded ssl certification"
+    },
+
+    "WebServerPort" : {
+      "Description" : "Port WebServers are listening on",
+      "Type" : "String",
+      "Default" : "8900",
+      "ConstraintDescription" : "Can contain only ASCII characters."
+    },
+
+    "WebAccessLogDir" : {
+      "Description" : "Default directory for web access logs",
+      "Type" : "String",
+      "Default" : "/var/log/tdcustom/accesslogs",
+      "ConstraintDescription" : "Can contain only ASCII characters."
+    }
+  },
+
+  "Mappings" : {
+    "AWSRegion2AZ" : {
+      "us-west-2" : { "1" : "us-west-2a", "2" : "us-west-2b", "3" : "us-west-2c"  }
+    },
+    "AWSAMIs" : {
+      "us-west-2" : { "1": "ami-5e63d13e" }
+    }
+  },
+
+  "Resources" : {
+    "VPC" : {
+      "Type" : "AWS::EC2::VPC",
+      "Properties" : {
+        "CidrBlock" : "10.0.0.0/16",
+        "Tags" : [ { "Key" : "Application", "Value" : { "Ref" : "AWS::StackId" } } ]
+      }
+    },
+
+    "PublicSubnet1" : {
+      "Type" : "AWS::EC2::Subnet",
+      "Properties" : {
+        "AvailabilityZone" : { "Fn::FindInMap" : [ "AWSRegion2AZ", { "Ref" : "AWS::Region" }, "1" ] },
+        "VpcId" : { "Ref" : "VPC" },
+        "CidrBlock" : "10.0.1.0/28",
+        "Tags" : [ { "Key" : "Application", "Value" : { "Ref" : "AWS::StackId" } } ]
+      }
+    },
+
+    "PublicSubnet2" : {
+      "Type" : "AWS::EC2::Subnet",
+      "Properties" : {
+        "AvailabilityZone" : { "Fn::FindInMap" : [ "AWSRegion2AZ", { "Ref" : "AWS::Region" }, "2" ] },
+        "VpcId" : { "Ref" : "VPC" },
+        "CidrBlock" : "10.0.2.0/28",
+        "Tags" : [ { "Key" : "Application", "Value" : { "Ref" : "AWS::StackId" } } ]
+      }
+    },
+
+    "PublicSubnet3" : {
+      "Type" : "AWS::EC2::Subnet",
+      "Properties" : {
+        "AvailabilityZone" : { "Fn::FindInMap" : [ "AWSRegion2AZ", { "Ref" : "AWS::Region" }, "3" ] },
+        "VpcId" : { "Ref" : "VPC" },
+        "CidrBlock" : "10.0.3.0/28",
+        "Tags" : [ { "Key" : "Application", "Value" : { "Ref" : "AWS::StackId" } } ]
+      }
+    },
+
+    "InternetGateway" : {
+      "Type" : "AWS::EC2::InternetGateway",
+      "Properties" : {
+        "Tags" : [ { "Key" : "Application", "Value" : { "Ref" : "AWS::StackId" } } ]
+      }
+    },
+
+    "AttachGateway" : {
+       "Type" : "AWS::EC2::VPCGatewayAttachment",
+       "Properties" : {
+         "VpcId" : { "Ref" : "VPC" },
+         "InternetGatewayId" : { "Ref" : "InternetGateway" }
+       }
+    },
+
+    "RouteTable" : {
+      "Type" : "AWS::EC2::RouteTable",
+      "Properties" : {
+        "VpcId" : { "Ref" : "VPC" },
+        "Tags" : [ { "Key" : "Application", "Value" : { "Ref" : "AWS::StackId" } } ]
+      }
+    },
+
+    "Route" : {
+      "Type" : "AWS::EC2::Route",
+      "DependsOn" : "AttachGateway",
+      "Properties" : {
+        "RouteTableId" : { "Ref" : "RouteTable" },
+        "DestinationCidrBlock" : "0.0.0.0/0",
+        "GatewayId" : { "Ref" : "InternetGateway" }
+      }
+    },
+
+    "PublicSubnetRouteTableAssociation1" : {
+      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties" : {
+        "SubnetId" : { "Ref" : "PublicSubnet1" },
+        "RouteTableId" : { "Ref" : "RouteTable" }
+      }
+    },
+
+    "PublicSubnetRouteTableAssociation2" : {
+      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties" : {
+        "SubnetId" : { "Ref" : "PublicSubnet2" },
+        "RouteTableId" : { "Ref" : "RouteTable" }
+      }
+    },
+
+    "PublicSubnetRouteTableAssociation3" : {
+      "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties" : {
+        "SubnetId" : { "Ref" : "PublicSubnet3" },
+        "RouteTableId" : { "Ref" : "RouteTable" }
+      }
+    },
+
+    "PublicNetworkAcl" : {
+      "Type" : "AWS::EC2::NetworkAcl",
+      "Properties" : {
+        "VpcId" : { "Ref" : "VPC" },
+        "Tags" : [ { "Key" : "Application", "Value" : { "Ref" : "AWS::StackId" } } ]
+      }
+    },
+
+    "InboundNetworkAclEntry" : {
+      "Type" : "AWS::EC2::NetworkAclEntry",
+      "Properties" : {
+        "NetworkAclId" : { "Ref" : "PublicNetworkAcl" },
+        "RuleNumber" : "100",
+        "Protocol" : "6",
+        "RuleAction" : "allow",
+        "Egress" : "false",
+        "CidrBlock" : "0.0.0.0/0",
+        "PortRange" : { "From" : "0", "To" : "65535" }
+      }
+    },
+
+    "OutBoundNetworkAclEntry" : {
+      "Type" : "AWS::EC2::NetworkAclEntry",
+      "Properties" : {
+        "NetworkAclId" : { "Ref" : "PublicNetworkAcl" },
+        "RuleNumber" : "100",
+        "Protocol" : "6",
+        "RuleAction" : "allow",
+        "Egress" : "true",
+        "CidrBlock" : "0.0.0.0/0",
+        "PortRange" : { "From" : "0", "To" : "65535" }
+      }
+    },
+
+    "PublicSubnet1NetworkAclAssociation" : {
+      "Type" : "AWS::EC2::SubnetNetworkAclAssociation",
+      "Properties" : {
+        "SubnetId" : { "Ref" : "PublicSubnet1" },
+        "NetworkAclId" : { "Ref" : "PublicNetworkAcl" }
+      }
+    },
+
+    "PublicSunbet2SubnetNetworkAclAssociation" : {
+      "Type" : "AWS::EC2::SubnetNetworkAclAssociation",
+      "Properties" : {
+        "SubnetId" : { "Ref" : "PublicSubnet2" },
+        "NetworkAclId" : { "Ref" : "PublicNetworkAcl" }
+      }
+    },
+
+    "PublicSubnet3SubnetNetworkAclAssociation" : {
+      "Type" : "AWS::EC2::SubnetNetworkAclAssociation",
+      "Properties" : {
+        "SubnetId" : { "Ref" : "PublicSubnet3" },
+        "NetworkAclId" : { "Ref" : "PublicNetworkAcl" }
+      }
+    },
+
+    "ELBSecurityGroup" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "VpcId" : { "Ref" : "VPC" },
+        "GroupDescription" : "Enable 80 and 443",
+        "SecurityGroupIngress" : [
+          { "IpProtocol" : "tcp", "FromPort" : "80", "ToPort" : "80", "CidrIp" : "0.0.0.0/0" },
+          { "IpProtocol" : "tcp", "FromPort" : "443", "ToPort" : "443", "CidrIp" : "0.0.0.0/0" }
+        ],
+        "Tags" : [ { "Key" : "Application", "Value" : { "Ref" : "AWS::StackId" } } ]
+      }
+    },
+
+    "InstanceSecurityGroup" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "VpcId" : { "Ref" : "VPC" },
+        "GroupDescription" : "Enable 22 and WebServerPort",
+        "SecurityGroupIngress" : [
+          { "IpProtocol" : "tcp", "FromPort" : "22", "ToPort" : "22", "CidrIp" : { "Ref" : "SSHLocationHome"} },
+          { "IpProtocol" : "tcp", "FromPort" : "22", "ToPort" : "22", "CidrIp" : { "Ref" : "SSHLocationTD"} },
+          { "IpProtocol" : "tcp", "FromPort" : { "Ref": "WebServerPort" }, "ToPort" : { "Ref": "WebServerPort" }, "SourceSecurityGroupId" : { "Ref": "ELBSecurityGroup"} }
+        ],
+        "Tags" : [ { "Key" : "Application", "Value" : { "Ref" : "AWS::StackId" } } ]
+      }
+    },
+
+    "ApacheWebServerInstance1" : {
+      "Type" : "AWS::EC2::Instance",
+      "DependsOn" : "AttachGateway",
+      "Metadata" : {
+        "AWS::CloudFormation::Init" : {
+          "configSets" : {
+            "InstallAndRun" : [ "Install", "Configure" ]
+          },
+          "Install" : {
+            "packages" : {
+              "apt" : {
+                "apache2" : []
+              }
+            },
+            "files" : {
+              "/var/www/html/index.html" : {
+                "content" : { "Fn::Join" : [ "", [
+                  "<html>\n",
+                  "  <head>\n",
+                  "    <title>TD Code Challenge</title>\n",
+                  "    <meta http-equiv=\"Content-Type\" content=\"text/html; charset=ISO-8859-1\">\n",
+                  "  </head>\n",
+                  "  <body>\n",
+                  "    <h1>hello world!</h1>\n",
+                  "  </body>\n",
+                  "</html>\n"
+                ]]},
+                "mode"  : "000600",
+                "owner" : "www-data",
+                "group" : "www-data"
+              }
+            }
+          },
+          "Configure" : {
+            "commands" : {
+              "01MakeAccessLogDir" : {
+                "command" : { "Fn::Join" : ["", ["mkdir -p ", { "Ref" : "WebAccessLogDir" }]]}
+              },
+              "02SetOwnerAccessLogDir" : {
+                "command" : { "Fn::Join" : ["", ["chown -R www-data.www-data ", { "Ref" : "WebAccessLogDir" }]]}
+              },
+              "03StopApache" : {
+                "command" : "/etc/init.d/apache2 stop"
+              },
+              "04ModifyAccessLogDir" : {
+                "command" : { "Fn::Join" : ["", ["sed -i 's#CustomLog.*#CustomLog\\ ", { "Ref" : "WebAccessLogDir" }, "/access.log\\ combined#' /etc/apache2/sites-enabled/000-default.conf" ]]}
+              },
+              "05SetOwnerLogDir" : {
+                "command" : "chown -R www-data.www-data /var/log/apache2"
+              },
+              "06SetOwnerApacheBin" : {
+                "command" : "chown -R www-data.www-data /usr/sbin/apache2"
+              },
+              "07SetUIDNonRootUser" : {
+                "command" : "chmod u+s /usr/sbin/apache2"
+              },
+              "08SetOwnerPID" : {
+                "command" : "chown -R www-data.www-data /var/run/apache2"
+              },
+              "09ChangeApacheListeningPort" : {
+                "command" : { "Fn::Join" : ["", ["sed -i s'/Listen\\ 80/Listen\\ ", { "Ref" : "WebServerPort" }, "/' /etc/apache2/ports.conf"]]}
+              },
+              "10ChangeVirtualHostListeningPort" : {
+                "command" : { "Fn::Join" : ["", ["sed -i s'/\\*:80/\\*:", { "Ref" : "WebServerPort" }, "/' /etc/apache2/sites-enabled/000-default.conf"]]}
+              }
+            },
+            "services" : {
+              "sysvinit" : {
+                "apache2" : { "enabled" : "true", "ensureRunning" : "true",
+                              "commands": ["ChangeVirtualHostListeningPort"] },
+                "cfn-hup" : { "enabled" : "true", "ensureRunning" : "true",
+                              "files" : ["/etc/cfn/cfn-hup.conf", "/etc/cfn/hooks.d/cfn-auto-reloader.conf"]}
+              }
+            }
+          }
+        }
+      },
+      "Properties" : {
+        "KeyName" : { "Ref" : "SSHKey" },
+        "InstanceType" : { "Ref": "InstanceType"},
+        "ImageId" : { "Fn::FindInMap" : [ "AWSAMIs", { "Ref" : "AWS::Region" }, "1" ] },
+        "Tags" : [ { "Key" : "Application", "Value" : { "Ref" : "AWS::StackId" } } ],
+        "NetworkInterfaces": [
+          { "AssociatePublicIpAddress": "true",
+            "DeviceIndex": "0",
+            "GroupSet": [ { "Ref" : "InstanceSecurityGroup" } ],
+            "SubnetId": { "Ref" : "PublicSubnet1" }
+          }
+        ],
+        "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+          "#!/bin/bash -xe\n",
+          "#Thanks Grant for the tip\n",
+          "apt-get update\n",
+          "apt-get -y install python-pip\n",
+          "pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz\n",
+          "cp /usr/local/init/ubuntu/cfn-hup /etc/init.d/cfn-hup\n",
+          "chmod +x /etc/init.d/cfn-hup\n",
+          "update-rc.d cfn-hup defaults\n ",
+          "service cfn-hup start\n",
+
+          "# Install the files and packages from the metadata\n",
+          "/usr/local/bin/cfn-init -v ",
+          " --stack ", { "Ref" : "AWS::StackName" },
+          " --resource ApacheWebServerInstance1",
+          " --configsets InstallAndRun",
+          " --region ", { "Ref" : "AWS::Region" }, "\n",
+
+          "# Signal the status from cfn-init\n",
+          "/usr/local/bin/cfn-signal -e $? ",
+          " --stack ", { "Ref" : "AWS::StackName" },
+          " --resource ApacheWebServerInstance1",
+          " --region ", { "Ref" : "AWS::Region" }, "\n"
+        ]]}}
+      }
+    },
+
+    "ApacheWebServerInstance2" : {
+      "Type" : "AWS::EC2::Instance",
+      "DependsOn" : "AttachGateway",
+      "Metadata" : {
+        "AWS::CloudFormation::Init" : {
+          "configSets" : {
+            "InstallAndRun" : [ "Install", "Configure" ]
+          },
+          "Install" : {
+            "packages" : {
+              "apt" : {
+                "apache2" : []
+              }
+            },
+            "files" : {
+              "/var/www/html/index.html" : {
+                "content" : { "Fn::Join" : [ "", [
+                  "<html>\n",
+                  "  <head>\n",
+                  "    <title>TD Code Challenge</title>\n",
+                  "    <meta http-equiv=\"Content-Type\" content=\"text/html; charset=ISO-8859-1\">\n",
+                  "  </head>\n",
+                  "  <body>\n",
+                  "    <h1>hello world!</h1>\n",
+                  "  </body>\n",
+                  "</html>\n"
+                ]]},
+                "mode"  : "000600",
+                "owner" : "www-data",
+                "group" : "www-data"
+              }
+            }
+          },
+          "Configure" : {
+            "commands" : {
+              "01MakeAccessLogDir" : {
+                "command" : { "Fn::Join" : ["", ["mkdir -p ", { "Ref" : "WebAccessLogDir" }]]}
+              },
+              "02SetOwnerAccessLogDir" : {
+                "command" : { "Fn::Join" : ["", ["chown -R www-data.www-data ", { "Ref" : "WebAccessLogDir" }]]}
+              },
+              "03StopApache" : {
+                "command" : "/etc/init.d/apache2 stop"
+              },
+              "04ModifyAccessLogDir" : {
+                "command" : { "Fn::Join" : ["", ["sed -i 's#CustomLog.*#CustomLog\\ ", { "Ref" : "WebAccessLogDir" }, "/access.log\\ combined#' /etc/apache2/sites-enabled/000-default.conf" ]]}
+              },
+              "05SetOwnerLogDir" : {
+                "command" : "chown -R www-data.www-data /var/log/apache2"
+              },
+              "06SetOwnerApacheBin" : {
+                "command" : "chown -R www-data.www-data /usr/sbin/apache2"
+              },
+              "07SetUIDNonRootUser" : {
+                "command" : "chmod u+s /usr/sbin/apache2"
+              },
+              "08SetOwnerPID" : {
+                "command" : "chown -R www-data.www-data /var/run/apache2"
+              },
+              "09ChangeApacheListeningPort" : {
+                "command" : { "Fn::Join" : ["", ["sed -i s'/Listen\\ 80/Listen\\ ", { "Ref" : "WebServerPort" }, "/' /etc/apache2/ports.conf"]]}
+              },
+              "10ChangeVirtualHostListeningPort" : {
+                "command" : { "Fn::Join" : ["", ["sed -i s'/\\*:80/\\*:", { "Ref" : "WebServerPort" }, "/' /etc/apache2/sites-enabled/000-default.conf"]]}
+              }
+            },
+            "services" : {
+              "sysvinit" : {
+                "apache2" : { "enabled" : "true", "ensureRunning" : "true",
+                              "commands": ["ChangeVirtualHostListeningPort"] },
+                "cfn-hup" : { "enabled" : "true", "ensureRunning" : "true",
+                              "files" : ["/etc/cfn/cfn-hup.conf", "/etc/cfn/hooks.d/cfn-auto-reloader.conf"]}
+              }
+            }
+          }
+        }
+      },
+      "Properties" : {
+        "KeyName" : { "Ref" : "SSHKey" },
+        "InstanceType" : { "Ref": "InstanceType"},
+        "ImageId" : { "Fn::FindInMap" : [ "AWSAMIs", { "Ref" : "AWS::Region" }, "1" ] },
+        "Tags" : [ { "Key" : "Application", "Value" : { "Ref" : "AWS::StackId" } } ],
+        "NetworkInterfaces": [
+          { "AssociatePublicIpAddress": "true",
+            "DeviceIndex": "0",
+            "GroupSet": [ { "Ref" : "InstanceSecurityGroup" } ],
+            "SubnetId": { "Ref" : "PublicSubnet2" }
+          }
+        ],
+        "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+          "#!/bin/bash -xe\n",
+          "apt-get update\n",
+          "apt-get -y install python-pip\n",
+          "pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz\n",
+          "cp /usr/local/init/ubuntu/cfn-hup /etc/init.d/cfn-hup\n",
+          "chmod +x /etc/init.d/cfn-hup\n",
+          "update-rc.d cfn-hup defaults\n ",
+          "service cfn-hup start\n",
+
+          "# Install the files and packages from the metadata\n",
+          "/usr/local/bin/cfn-init -v ",
+          " --stack ", { "Ref" : "AWS::StackName" },
+          " --resource ApacheWebServerInstance2",
+          " --configsets InstallAndRun",
+          " --region ", { "Ref" : "AWS::Region" }, "\n",
+
+          "# Signal the status from cfn-init\n",
+          "/usr/local/bin/cfn-signal -e $? ",
+          " --stack ", { "Ref" : "AWS::StackName" },
+          " --resource ApacheWebServerInstance2",
+          " --region ", { "Ref" : "AWS::Region" }, "\n"
+        ]]}}
+      }
+    },
+
+    "NGNIXServerInstance1" : {
+      "Type" : "AWS::EC2::Instance",
+      "DependsOn" : "AttachGateway",
+      "Metadata" : {
+        "AWS::CloudFormation::Init" : {
+          "configSets" : {
+            "InstallAndRun" : [ "Install", "Configure" ]
+          },
+          "Install" : {
+            "packages" : {
+              "apt" : {
+                "nginx" : []
+              }
+            },
+            "files" : {
+              "/usr/share/nginx/html/index.html" : {
+                "content" : { "Fn::Join" : [ "", [
+                  "<html>\n",
+                  "  <head>\n",
+                  "    <title>TD Code Challenge</title>\n",
+                  "    <meta http-equiv=\"Content-Type\" content=\"text/html; charset=ISO-8859-1\">\n",
+                  "  </head>\n",
+                  "  <body>\n",
+                  "    <h1>hello world!</h1>\n",
+                  "  </body>\n",
+                  "</html>\n"
+                ]]},
+                "mode"  : "000600",
+                "owner" : "www-data",
+                "group" : "www-data"
+              }
+            }
+          },
+          "Configure" : {
+            "commands" : {
+              "01MakeAccessLogDir" : {
+                "command" : { "Fn::Join" : ["", ["mkdir -p ", { "Ref" : "WebAccessLogDir" }]]}
+              },
+              "02SetOwnerAccessLogDir" : {
+                "command" : { "Fn::Join" : ["", ["chown -R www-data.www-data ", { "Ref" : "WebAccessLogDir" }]]}
+              },
+              "03StopNGINXBeforeModifing" : {
+                "command" : "/etc/init.d/nginx stop; sleep 10"
+              },
+              "04SetNonRootUser" : {
+                "command" : "chown www-data.www-data /usr/sbin/nginx"
+              },
+              "05SetUIDNonRootUser" : {
+                "command" : "chmod u+s /usr/sbin/nginx"
+              },
+              "06CreateNGINXPIDDirectory" : {
+                "command" : "mkdir -p /var/run/nginx"
+              },
+              "07SetNGINXPIDDirectoryOwner" : {
+                "command" : "chown -R www-data.www-data /var/run/nginx"
+              },
+              "08SetNGINXPIDPath" : {
+                "command" : "sed -i 's#^pid.*$#pid\\ /var/run/nginx/nginx.pid;#' /etc/nginx/nginx.conf"
+              },
+              "09ChangeNGINXDefaultListeningPort" : {
+                "command" : { "Fn::Join" : ["", ["sed -i s'/listen\\ 80\\ default_server;/listen\\ ", { "Ref" : "WebServerPort" }, "\\ default_server;/' /etc/nginx/sites-enabled/default"]]}
+              },
+              "10ChangeNGINXIPv6DefaultListeningPort" : {
+                "command" : { "Fn::Join" : ["", ["sed -i s'/listen\\ \\[::\\]:80/listen\\ \\[::\\]:", { "Ref" : "WebServerPort" }, "/' /etc/nginx/sites-enabled/default"]]}
+              },
+              "11ChangeNGINXAcessLogPath" : {
+                "command" : { "Fn::Join" : ["", ["sed -i '/^server\\ {/a \\\taccess_log\\ ", { "Ref" : "WebAccessLogDir" }, "/access.log;' /etc/nginx/sites-enabled/default"]]}
+              }
+            },
+            "services" : {
+              "sysvinit" : {
+                "nginx" : { "enabled" : "true", "ensureRunning" : "true",
+                            "commands": ["ChangeNGINXAcessLogPath"] },
+                "cfn-hup" : { "enabled" : "true", "ensureRunning" : "true",
+                              "files" : ["/etc/cfn/cfn-hup.conf", "/etc/cfn/hooks.d/cfn-auto-reloader.conf"]}
+              }
+            }
+          }
+        }
+      },
+      "Properties" : {
+        "KeyName" : { "Ref" : "SSHKey" },
+        "InstanceType" : { "Ref": "InstanceType"},
+        "ImageId" : { "Fn::FindInMap" : [ "AWSAMIs", { "Ref" : "AWS::Region" }, "1" ] },
+        "Tags" : [ { "Key" : "Application", "Value" : { "Ref" : "AWS::StackId" } } ],
+        "NetworkInterfaces": [
+          { "AssociatePublicIpAddress": "true",
+            "DeviceIndex": "0",
+            "GroupSet": [ { "Ref" : "InstanceSecurityGroup" } ],
+            "SubnetId": { "Ref" : "PublicSubnet3" }
+          }
+        ],
+        "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+          "#!/bin/bash -xe\n",
+          "apt-get update\n",
+          "apt-get -y install python-pip\n",
+          "pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz\n",
+          "cp /usr/local/init/ubuntu/cfn-hup /etc/init.d/cfn-hup\n",
+          "chmod +x /etc/init.d/cfn-hup\n",
+          "update-rc.d cfn-hup defaults\n ",
+          "service cfn-hup start\n",
+
+          "# Install the files and packages from the metadata\n",
+          "/usr/local/bin/cfn-init -v ",
+          " --stack ", { "Ref" : "AWS::StackName" },
+          " --resource NGNIXServerInstance1",
+          " --configsets InstallAndRun",
+          " --region ", { "Ref" : "AWS::Region" }, "\n",
+
+          "# Signal the status from cfn-init\n",
+          "/usr/local/bin/cfn-signal -e $? ",
+          " --stack ", { "Ref" : "AWS::StackName" },
+          " --resource NGNIXServerInstance1",
+          " --region ", { "Ref" : "AWS::Region" }, "\n"
+        ]]}}
+      }
+    },
+
+    "WebELB" : {
+      "Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
+      "Properties" : {
+        "Tags" : [ { "Key" : "Application", "Value" : { "Ref" : "AWS::StackId" } } ],
+        "Subnets" : [
+          { "Ref": "PublicSubnet1" },
+          { "Ref": "PublicSubnet2" },
+          { "Ref": "PublicSubnet3" }
+        ],
+        "SecurityGroups" : [ { "Fn::GetAtt" : [ "ELBSecurityGroup", "GroupId" ] } ],
+        "Instances" : [
+          { "Ref" : "ApacheWebServerInstance1" },
+          { "Ref" : "ApacheWebServerInstance2" },
+          { "Ref" : "NGNIXServerInstance1" }
+        ],
+        "Listeners" : [
+          { "LoadBalancerPort" : "80",
+            "InstancePort" : { "Ref" : "WebServerPort" },
+            "Protocol" : "HTTP"
+          },
+          { "LoadBalancerPort" : "443",
+            "InstancePort" : { "Ref" : "WebServerPort" },
+            "Protocol" : "HTTPS",
+            "SSLCertificateId" : { "Ref": "SSLCertARN" }
+          }
+        ],
+        "HealthCheck" : {
+          "Target" : { "Fn::Join" : ["", ["HTTP:", { "Ref" : "WebServerPort" }, "/index.html" ] ] },
+          "HealthyThreshold" : "3",
+          "UnhealthyThreshold" : "5",
+          "Interval" : "30",
+          "Timeout" : "5"
+        }
+      }
+    }
+  },
+
+  "Outputs" : {
+    "HTTPURL" : {
+      "Value" : { "Fn::Join" : [ "", ["http://", { "Fn::GetAtt" : ["WebELB", "DNSName"] }]]},
+      "Description" : "ELB URL"
+    },
+    "HTTPSURL" : {
+      "Value" : { "Fn::Join" : [ "", ["https://", { "Fn::GetAtt" : ["WebELB", "DNSName"] }]]},
+      "Description" : "ELB URL"
+    },
+    "Apache1IP" : {
+      "Value" : { "Fn::Join" : [ "", [ { "Fn::GetAtt" : ["ApacheWebServerInstance1", "PublicIp"] }]]},
+      "Description" : "Apache1 public IP"
+    },
+    "Apache2IP" : {
+      "Value" : { "Fn::Join" : [ "", [ { "Fn::GetAtt" : ["ApacheWebServerInstance2", "PublicIp"] }]]},
+      "Description" : "Apache2 public IP"
+    },
+    "NGINX1IP" : {
+      "Value" : { "Fn::Join" : [ "", [ { "Fn::GetAtt" : ["NGNIXServerInstance1", "PublicIp"] }]]},
+      "Description" : "NGINX1 public IP"
+    }
+  }
+}
