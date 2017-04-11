@@ -34,6 +34,7 @@ To get the various DNS names and IP address of the resources deployed.
 ```
  aws cloudformation describe-stacks --stack-name webstack
 ```
+*Note - It may take a few minutes for the DNS name of the ELB to propagate out.  The URL endpoints may not work immediately.*
 
 ## Authors
 
